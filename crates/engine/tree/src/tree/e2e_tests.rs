@@ -5,8 +5,9 @@ use eyre::Result;
 use reth_chainspec::{ChainSpecBuilder, MAINNET};
 use reth_e2e_test_utils::testsuite::{
     actions::{
-        CaptureBlock, CreateFork, ExpectFcuStatus, MakeCanonical, ProduceBlocks,
-        ProduceInvalidBlocks, ReorgTo, ValidateCanonicalTag,
+        CaptureBlock, CompareNodeChainTips, CreateFork, ExpectFcuStatus, MakeCanonical,
+        ProduceBlocks, ProduceBlocksLocally, ProduceInvalidBlocks, ReorgTo, SelectActiveNode,
+        SendNewPayloads, UpdateBlockInfo, ValidateCanonicalTag,
     },
     setup::{NetworkSetup, Setup},
     TestBuilder,
@@ -173,6 +174,68 @@ async fn test_engine_tree_reorg_with_missing_ancestor_expecting_valid_e2e() -> R
         // test FCU to the fork tip - should return INVALID because the chain contains an invalid
         // block
         .with_action(ExpectFcuStatus::invalid("fork_tip"));
+
+    test.run::<EthereumNode>().await?;
+
+    Ok(())
+}
+
+/// Test that verifies buffered blocks are eventually connected when sent in reverse order.
+///
+/// This test:
+/// 1. Has node 0 produce blocks 1 and 2
+/// 2. Sends block 2 to node 1 first (which should buffer it)
+/// 3. Sends block 1 to node 1 (which should connect both blocks)
+/// 4. Verifies both nodes have the same chain
+#[tokio::test]
+async fn test_engine_tree_buffered_blocks_are_eventually_connected_e2e() -> Result<()> {
+    reth_tracing::init_test_tracing();
+
+    let test = TestBuilder::new()
+        .with_setup(
+            Setup::default()
+                .with_chain_spec(Arc::new(
+                    ChainSpecBuilder::default()
+                        .chain(MAINNET.chain)
+                        .genesis(
+                            serde_json::from_str(include_str!(
+                                "../../../../e2e-test-utils/src/testsuite/assets/genesis.json"
+                            ))
+                            .unwrap(),
+                        )
+                        .cancun_activated()
+                        .build(),
+                ))
+                .with_network(NetworkSetup::multi_node_unconnected(2)) // Need 2 disconnected nodes
+                .with_tree_config(
+                    TreeConfig::default()
+                        .with_legacy_state_root(false)
+                        .with_has_enough_parallelism(true),
+                ),
+        )
+        // Node 0 produces blocks 1 and 2 locally without broadcasting
+        .with_action(SelectActiveNode::new(0))
+        .with_action(ProduceBlocksLocally::<EthEngineTypes>::new(2))
+        // Make the blocks canonical on node 0 so they're available via RPC
+        .with_action(MakeCanonical::with_active_node())
+        // Send blocks in reverse order (2, then 1) from node 0 to node 1
+        // This will test the buffering mechanism
+        .with_action(
+            SendNewPayloads::<EthEngineTypes>::new()
+                .with_target_node(1)
+                .with_source_node(0)
+                .with_start_block(1)
+                .with_total_blocks(2)
+                .in_reverse_order()
+        )
+        // Update node 1's view to recognize the new blocks
+        .with_action(SelectActiveNode::new(1))
+        // Get the latest block from node 1's RPC and update environment
+        .with_action(UpdateBlockInfo::default())
+        // Make block 2 canonical on node 1 with a forkchoice update
+        .with_action(MakeCanonical::with_active_node())
+        // Verify both nodes eventually have the same chain tip
+        .with_action(CompareNodeChainTips::expect_same(0, 1));
 
     test.run::<EthereumNode>().await?;
 
