@@ -151,3 +151,30 @@ async fn test_engine_tree_valid_and_invalid_forks_with_older_canonical_head_e2e(
 
     Ok(())
 }
+
+/// Test that verifies engine tree behavior when handling a reorg with a missing ancestor
+/// that is expected to be valid but contains an invalid block.
+#[tokio::test]
+async fn test_engine_tree_reorg_with_missing_ancestor_expecting_valid_e2e() -> Result<()> {
+    reth_tracing::init_test_tracing();
+
+    let test = TestBuilder::new()
+        .with_setup(default_engine_tree_setup())
+        // build main chain (blocks 1-6)
+        .with_action(ProduceBlocks::<EthEngineTypes>::new(6))
+        .with_action(MakeCanonical::new())
+        .with_action(CaptureBlock::new("main_chain_tip"))
+        // create a fork from the main chain tip with 15 blocks
+        // the 7th block (index 6) will be invalid, matching the original test
+        // which had the invalid block at "9th from the end" of a 15-block chain
+        .with_action(CreateFork::<EthEngineTypes>::new_from_tag("main_chain_tip", 6))
+        .with_action(ProduceInvalidBlocks::<EthEngineTypes>::with_invalid_at(9, 0))
+        .with_action(CaptureBlock::new("fork_tip"))
+        // test FCU to the fork tip - should return INVALID because the chain contains an invalid
+        // block
+        .with_action(ExpectFcuStatus::invalid("fork_tip"));
+
+    test.run::<EthereumNode>().await?;
+
+    Ok(())
+}
