@@ -59,3 +59,8 @@ book/vocs/node_modules
 
 # Cargo chef recipe file
 recipe.json
+
+_
+links-report.json
+
+.wrangler

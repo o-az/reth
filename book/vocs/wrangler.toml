@@ -1,0 +1,20 @@
+#:schema  https://esm.sh/wrangler/config-schema.json
+
+minify = true
+keep_vars = true
+workers_dev = true
+name = "vocs"
+compatibility_date = "2025-06-24"
+compatibility_flags = [ "nodejs_als", "nodejs_compat" ]
+
+[dev]
+port = 6901
+
+[placement]
+mode = "smart"
+
+[observability]
+enabled = true
+
+[assets]
+directory = "./docs/dist"

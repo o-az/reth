@@ -1,4 +1,6 @@
 book/cli/**/*.md linguist-vendored
 book/cli/cli.md -linguist-vendored
 
+bun.lock linguist-generated
+
 crates/storage/libmdbx-rs/mdbx-sys/libmdbx/** linguist-vendored
